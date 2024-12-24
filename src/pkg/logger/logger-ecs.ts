@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * This logger uses Elastic Common Schema
  */

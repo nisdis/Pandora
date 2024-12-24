@@ -10,7 +10,7 @@
 
 # Ignore Recordings
 *.mp3
-*.ogg
+*.ogg*
 *.flac
 *.aac
 rec
@@ -37,3 +37,6 @@ coverage
 # Data directory for dapr
 .dapr/*
 !.dapr/resources
+.venv
+pandora_recordings
+.DS_Store

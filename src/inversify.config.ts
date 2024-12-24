@@ -70,7 +70,7 @@ container
   .toConstantValue(
     new ExternalStore(
       container.get<IStoreProxy>(TYPES.StoreProxy),
-      process.env.STORE_NAME
+      process.env.STORE_NAME ?? "Store"
     )
   );
 

@@ -324,7 +324,9 @@ export class Pandora {
         this.logger.error(`Error while uploading records files`, e);
       }
     }
-    await c.sendMessage(`Recording session ended successfully !`);
+    await c.sendMessage(
+      `Recording session ended successfully! ${process.env?.DOMAIN ?? "http://localhost:5173/master/meet/"}${currentState.recordsIds} `,
+    );
 
     this.logger.info(`Recording ended successfully!`);
     await c.signalState(RECORD_EVENT.STOPPED, {

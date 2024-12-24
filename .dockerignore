@@ -1,5 +1,5 @@
 node_modules
-*.ogg
+*.ogg*
 *.flac
 *.mp3
 dist
