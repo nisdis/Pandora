@@ -1,11 +1,14 @@
 services:
   # The bot itself, record into raw, unusable files
   pandora:
-    build:
-      context: ../..
-    container_name: pandora
+    # build:
+    #   context: ../..
+    image: minimal-pandora:latest
+    container_name: pandora-prod
     restart: always
     environment:
+      # - UID=1001
+      # - GID=1001
       # Discord bot token
       - PANDORA_TOKEN=${PANDORA_TOKEN}
       # Prefix for text-based command
@@ -13,44 +16,44 @@ services:
       # Dapr component for state storage
       - STORE_NAME=${STORE_NAME}
       # Dapr component to support starting/stopping a recording from a pub/sub message
-      - PUBSUB_NAME=pubsub
+      - PUBSUB_NAME=${PUBSUB_NAME}
       # Dapr component for object storage
-      - OBJECT_STORE_NAME=object-store
+      # - OBJECT_STORE_NAME=${OBJECT_STORE_NAME}
       # Dapr callback port
       - DAPR_SERVER_PORT=${DAPR_SERVER_PORT}
       # Sidecar port
       - DAPR_HTTP_PORT=${DAPR_HTTP_PORT}
       - NODE_ENV=production
     volumes:
-      - pandora_recordings:/app/rec
+      - '/mnt/bucket:/app/rec'
     networks:
       - discord_recordings
   # Dapr sidecar, defining runtime implementations
   pandora-dapr:
     image: "daprio/daprd:edge"
-    command: [
-      "./daprd",
-      "-app-id", "pandora",
-      "-app-port", "${DAPR_SERVER_PORT}",
-      "-dapr-http-port", "${DAPR_HTTP_PORT}",
-      "-dapr-http-max-request-size", "1200",
-      "-resources-path" ,"/components"
-    ]
+    command: [ "./daprd", "-app-id", "pandora-prod", "-app-port", "${DAPR_SERVER_PORT}", "-dapr-http-port", "${DAPR_HTTP_PORT}", "-dapr-http-max-request-size", "1200", "-resources-path", "./components" ]
     # In docker-compose, you have to provide components by sharing a volume
     # this is the dapr/components directory
     volumes:
-      - "./components/:/components"
+      - "./components:/components"
     network_mode: "service:pandora"
 
   # Converts the raw files into audio files
   pandora-cooking-server:
-    image: sotrx/pandora-cooking-server:2.4.4
-    container_name: pandora-cooking-server
+    image: pandora-cook-local:v2
+    container_name: pandora-cooking-server-prod
+    # environment:
+    #   - UID=1001
+    #   - GID=1001
+    #   # Dapr component to support starting/stopping a recording from a pub/sub message
+    #   - PUBSUB_NAME=${PUBSUB_NAME}
+    #   # Dapr component for object storage
+    #   - OBJECT_STORE_NAME=${OBJECT_STORE_NAME}
     ports:
       - "3004:3004"
     restart: always
     volumes:
-      - pandora_recordings:/app/rec
+      - '/mnt/bucket:/app/rec'
     networks:
       - discord_recordings
 
@@ -59,25 +62,28 @@ services:
     image: "redis:alpine"
     networks:
       - discord_recordings
+  # s3fs:
+  #   container_name: s3fs
+  #   image: efrecon/s3fs:1.91
+  #   restart: unless-stopped
+  #   cap_add:
+  #     - SYS_ADMIN
+  #   security_opt:
+  #     - 'apparmor:unconfined'
+  #   devices:
+  #     - /dev/fuse
+  #   volumes:
+  #     - '/mnt/bucket:/opt/s3fs/bucket:rshared'
+  #   environment:
+  #     AWS_S3_BUCKET: '${AWS_S3_BUCKET}'
+  #     AWS_S3_ACCESS_KEY_ID: '${AWS_S3_ACCESS_KEY_ID}'
+  #     AWS_S3_SECRET_ACCESS_KEY: '${AWS_S3_SECRET_ACCESS_KEY}'
+  #     AWS_S3_URL: '${AWS_S3_URL}'
+  #     AWS_S3_MOUNT: '/opt/s3fs/bucket'
+  #     S3FS_ARGS: ''
+  #     S3FS_DEBUG: 1
+  #     UID: 1001
+  #     GID: 1001
 
-  # Object storage
-  # /!\ This is just an example, and there is no data persistence /!\
-  # For real deployment, see https://docs.min.io/docs/deploy-minio-on-docker-compose.html
-  minio:
-    image: "minio/minio"
-    ports:
-      # Minio API
-      - "9000:9000"
-      # Minio UI
-      - "9001:9001"
-    networks:
-      - discord_recordings
-
-# Storing the recordings
-volumes:
-  pandora_recordings:
-
-# Default docker network doesn't always provide name resolution
-# so we create a new one
 networks:
   discord_recordings:
