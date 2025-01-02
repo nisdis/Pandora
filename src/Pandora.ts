@@ -257,6 +257,8 @@ export class Pandora {
         this.logger.debug(`[Audiorecorder] =>  ${message}`);
       });
       this.logger.debug(`[Main] :: Record started with id ${recordId}`);
+      c.recordID = recordId;
+
       await c.sendMessage(`Recording started with id ${recordId}`);
       // commit this new record to the external state...
       const newState = await this.computeNewState(
@@ -363,10 +365,6 @@ export class Pandora {
       }
     }
 
-    await c.sendMessage(
-      `Recording session ended successfully! ${process?.env?.DOMAIN ?? "http://localhost:5173/master/meet/"}${c.recordID} `,
-    );
-
     this.logger.info(`Recording ended successfully!`);
     const state = await c.getState();
     this.logger.info(`STATE:  ${state.name} ${state.data}`);
@@ -374,6 +372,9 @@ export class Pandora {
       ids: currentState.recordsIds,
     });
     await getStream(c.recordID);
+    await c.sendMessage(
+      `Recording session ended successfully! ${process?.env?.DOMAIN ?? "http://localhost:5173/master/meet/"}${c.recordID} `,
+    );
   }
 
   async handleRecorderError(c: IController, err: Error): Promise<never> {
@@ -424,7 +425,6 @@ export class Pandora {
     // There can be multiple record IDs if we're resuming a previous record
     const recordingIds = currentState?.recordsIds ?? [];
     recordingIds.push(recordId);
-    c.recordID = recordId;
     return {
       recordsIds: recordingIds,
       controllerState: await c.getState(),
