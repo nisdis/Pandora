@@ -40,3 +40,4 @@ coverage
 .venv
 pandora_recordings
 .DS_Store
+samples/*/components/*

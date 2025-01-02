@@ -1,4 +1,4 @@
-export class BrokerError extends Error {}
+export class BrokerError extends Error { }
 
 export enum RECORD_EVENT {
   /** Record has started successfully */
@@ -91,6 +91,10 @@ export declare interface IController {
     event: RECORD_EVENT.STOPPED,
     payload?: { ids: string[] }
   ): Promise<void>;
+
+  /** ID of the recording */
+  recordID: string;
+
 }
 
 /**

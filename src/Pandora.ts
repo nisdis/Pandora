@@ -21,7 +21,44 @@ import { ILogger } from "./pkg/logger/logger-api";
 import { exit } from "process";
 import { IObjectStore } from "./pkg/object-store/objet-store-api";
 import { join } from "path";
-import { readdir } from "fs/promises";
+import { readdir, unlink } from "fs/promises";
+import got from 'got';
+
+import { pipeline } from 'stream'; // Import 'stream'
+import { promisify } from 'util'; // Import promisify from 'util'
+import { exec } from 'child_process'; // Import promisify from 'util'
+import { createWriteStream, PathLike } from 'fs'; // Import promisify from 'util'
+
+
+const pipelineAsync = promisify(pipeline); // Convert pipeline to promise-based
+const execThis = promisify(exec)
+
+// Your additional code logic here...
+
+
+async function getStream(recordID: string) {
+
+  const filePath: PathLike = `/app/bucket/somefile${recordID}.ogg`;
+  const url: string = `http://pandora-cooking-server:3004/${recordID}`;
+
+  await pipelineAsync(
+    got.stream(url),
+    createWriteStream(filePath)
+  ).catch(err => {
+    unlink(filePath).catch(err => {
+      if (err.code !== 'ENOENT') {
+        // trying to delete output file upon error
+        console.log('error trying to delete output file', err);
+      }
+    });
+    throw err;
+  });
+  const { stdout, stderr } = await execThis(`chmod 777 /app/bucket/*${recordID}*`);
+  console.log(stderr, stdout)
+
+
+}
+
 
 @injectable()
 export class Pandora {
@@ -320,18 +357,23 @@ export class Pandora {
         if (nbFilesUploaded === 0)
           this.logger.warn(`Could not find any record files to upload`);
         await c.sendMessage(`Records uploaded !`);
+
       } catch (e) {
         this.logger.error(`Error while uploading records files`, e);
       }
     }
+
     await c.sendMessage(
-      `Recording session ended successfully! ${process.env?.DOMAIN ?? "http://localhost:5173/master/meet/"}${currentState.recordsIds} `,
+      `Recording session ended successfully! ${process?.env?.DOMAIN ?? "http://localhost:5173/master/meet/"}${c.recordID} `,
     );
 
     this.logger.info(`Recording ended successfully!`);
+    const state = await c.getState();
+    this.logger.info(`STATE:  ${state.name} ${state.data}`);
     await c.signalState(RECORD_EVENT.STOPPED, {
       ids: currentState.recordsIds,
     });
+    await getStream(c.recordID);
   }
 
   async handleRecorderError(c: IController, err: Error): Promise<never> {
@@ -382,6 +424,7 @@ export class Pandora {
     // There can be multiple record IDs if we're resuming a previous record
     const recordingIds = currentState?.recordsIds ?? [];
     recordingIds.push(recordId);
+    c.recordID = recordId;
     return {
       recordsIds: recordingIds,
       controllerState: await c.getState(),

@@ -37,6 +37,7 @@ export class CommandBroker extends EventEmitter implements IController {
   ) {
     super();
   }
+  recordID: string;
 
   async start(): Promise<void> {
     this.boImpl = await this.clientProvider();
@@ -162,8 +163,7 @@ export class CommandBroker extends EventEmitter implements IController {
     this.messageBuffer = message;
     if (message.channel?.type !== ChannelType.GuildText) {
       throw new BrokerError(
-        `while starting record : Expected text channel but got ${
-          ChannelType.GuildText[message.channel?.type]
+        `while starting record : Expected text channel but got ${ChannelType.GuildText[message.channel?.type]
         }`
       );
     }

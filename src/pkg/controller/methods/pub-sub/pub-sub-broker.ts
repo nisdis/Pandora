@@ -36,6 +36,7 @@ export class PubSubBroker extends EventEmitter implements IController {
   ) {
     super();
   }
+  recordID: string;
 
   async start(): Promise<void> {
     await this.server.subscribe(
@@ -86,8 +87,7 @@ export class PubSubBroker extends EventEmitter implements IController {
     else
       this.emit(
         "debug",
-        `Received end event, but conditions not met to end recording : recVoiceChannelID: ${
-          this.recVoiceChannelId
+        `Received end event, but conditions not met to end recording : recVoiceChannelID: ${this.recVoiceChannelId
         }, payload : ${JSON.stringify(data)}`
       );
   }

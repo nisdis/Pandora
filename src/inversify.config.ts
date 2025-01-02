@@ -117,7 +117,6 @@ container.bind(TYPES.ClientProvider).toProvider((context) => {
     return new Promise((res, rej) => {
       const client = new Eris.Client(process.env.PANDORA_TOKEN);
       if (client.ready) res(client);
-      client.connect();
       client.on("ready", () => {
         console.log("Up and running");
         res(client);
@@ -129,10 +128,11 @@ container.bind(TYPES.ClientProvider).toProvider((context) => {
           )}`
         );
       });
+      client.connect();
       setTimeout(() => {
         if (client.ready) res(client);
         else rej();
-      }, 20000);
+      }, 40000);
     });
   };
 });

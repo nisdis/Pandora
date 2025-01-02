@@ -60,6 +60,7 @@ export class InteractionBroker extends EventEmitter implements IController {
     super();
     this.commands = commands ?? InteractionBroker.DEFAULT_COMMANDS;
   }
+  recordID: string;
 
   /**
    * Register all commands against discord gateway api
@@ -87,8 +88,7 @@ export class InteractionBroker extends EventEmitter implements IController {
     this.messageBuffer = message;
     if (message.channel?.type !== ChannelType.GuildText) {
       throw new BrokerError(
-        `while starting record : Expected text channel but got ${
-          ChannelType.GuildText[message.channel?.type]
+        `while starting record : Expected text channel but got ${ChannelType.GuildText[message.channel?.type]
         }`
       );
     }

@@ -11,7 +11,7 @@ import * as EventEmitter from "events";
 import { constants } from "fs";
 import Timeout = NodeJS.Timeout;
 
-export class InvalidRecorderStateError extends Error {}
+export class InvalidRecorderStateError extends Error { }
 
 @injectable()
 export class AudioRecorder extends EventEmitter implements IRecorderService {
@@ -149,7 +149,7 @@ export class AudioRecorder extends EventEmitter implements IRecorderService {
    * to Discord.js format
    */
   adaptChunk(chunk: Buffer, userId: string, timestamp: number) {
-    const newChunk: Chunk = Buffer.from(chunk) as Chunk;
+    const newChunk: Chunk = Buffer.from(chunk) as unknown as Chunk;
     newChunk.timestamp = timestamp;
     // If the userId is the bot itself or if it's somehow not defined,
     // abort recording this chunk
