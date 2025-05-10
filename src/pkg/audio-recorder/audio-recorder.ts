@@ -4,21 +4,42 @@ import { hrtime } from "process";
 import { IMultiTracksEncoder } from "../../internal/opus-encoder/multi-tracks-encoder";
 import { TYPES } from "../../types";
 import { inject, injectable } from "inversify";
-import { Readable } from "stream";
+import { pipeline, Readable, Writable } from "stream";
 import { resolve } from "path";
 import { access } from "fs/promises";
 import * as EventEmitter from "events";
 import { constants } from "fs";
 import Timeout = NodeJS.Timeout;
+import { OpenAI } from "openai";
+import { AssemblyAI } from "assemblyai";
+import { ElevenLabsClient } from "elevenlabs";
+import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
+import { opus } from "prism-media";
+
+import fs from "fs";
+import { createWriteStream } from "fs";
+import { tmpdir } from "os";
+
+import { ILogger } from "../logger/logger-api";
+import Ffmpeg = require("fluent-ffmpeg");
 
 export class InvalidRecorderStateError extends Error { }
+
+const voice = new ElevenLabsClient({
+  apiKey: process.env.ELEVENLABS_API_KEY, // Defaults to process.env.ELEVENLABS_API_KEY
+});
+
+// Initialize OpenAI Client
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const assemblyAI = new AssemblyAI({ apiKey: process.env.ASSEMBLYAI_API_KEY });
+const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
 
 @injectable()
 export class AudioRecorder extends EventEmitter implements IRecorderService {
   /** Path to a sample sound file */
   private static readonly SAMPLE_SOUND_PATH = resolve(
     __dirname,
-    "../../assets/welcome.opus"
+    "../../assets/welcome.opus",
   );
 
   private static readonly MAX_PACKETS_QUEUE_LENGTH = 16;
@@ -47,6 +68,19 @@ export class AudioRecorder extends EventEmitter implements IRecorderService {
   private users = new Map<string, User>();
   // Our current track number
   private trackNo = 1;
+  private fileStream: Writable;
+  private opusDecoder = new opus.Encoder({
+    frameSize: 960,
+    rate: 48000,
+    channels: 2,
+  });
+
+  private deepgramConnection = deepgram.listen.live({
+    model: "nova-2",
+    language: "en-US",
+    smart_format: true,
+  });
+
   // Track numbers for each active user
   private userTrackNos = new Map<string, number>();
   // Packet numbers for each active user
@@ -59,7 +93,9 @@ export class AudioRecorder extends EventEmitter implements IRecorderService {
 
   constructor(
     @inject(TYPES.MultiTracksEncoder)
-    private multiTracksEncoder: IMultiTracksEncoder
+    private multiTracksEncoder: IMultiTracksEncoder,
+    @inject(TYPES.Logger)
+    private logger: ILogger,
   ) {
     super();
   }
@@ -72,6 +108,7 @@ export class AudioRecorder extends EventEmitter implements IRecorderService {
     this.flushRemainingData();
     this.multiTracksEncoder.closeStreams();
     this.resetToBlankState();
+    this.deepgramConnection.requestClose();
     this.isRecording = false;
   }
 
@@ -88,9 +125,19 @@ export class AudioRecorder extends EventEmitter implements IRecorderService {
       channel: this.voiceChannel.name,
     });
     this.voiceConnection = await this.setupVoiceConnection();
+    this.voiceConnection.on("debug", (m) => this.logger.info(`[VOICE]: ${m}`));
     this.voiceReceiver = this.voiceConnection.receive("opus");
+    this.createStreamFile();
     this.voiceReceiver.on("data", (c, u, t) => this.adaptChunk(c, u, t));
     this.voiceConnection.on("error", (err) => this.emit("error", err));
+    this.voiceConnection.on("speakingStart", (m) =>
+      this.logger.info(`[speakingStart]: ${m}`),
+    );
+    this.voiceConnection.on("speakingStop", (m) =>
+      this.logger.info(`[speakingStop]: ${m}`),
+    );
+
+    this.logger.info(this.voiceConnection.eventNames().join(","));
     return recordId;
   }
 
@@ -138,7 +185,7 @@ export class AudioRecorder extends EventEmitter implements IRecorderService {
         userTrackNo,
         userRecents,
         1,
-        packetNo
+        packetNo,
       );
       this.userPacketNos.set(user.id, newPacketNo);
     }
@@ -149,7 +196,16 @@ export class AudioRecorder extends EventEmitter implements IRecorderService {
    * to Discord.js format
    */
   adaptChunk(chunk: Buffer, userId: string, timestamp: number) {
+    // this.opusDecoder.write(chunk);
+    // this.deepgramConnection.send(chunk);
+    // this.fileStream.write(chunk)
+    if (chunk) {
+      this.opusDecoder.write(chunk); // Decode Opus to PCM
+    }
+
+    // this.logger.info("new Chunk")
     const newChunk: Chunk = Buffer.from(chunk) as unknown as Chunk;
+
     newChunk.timestamp = timestamp;
     // If the userId is the bot itself or if it's somehow not defined,
     // abort recording this chunk
@@ -205,7 +261,7 @@ export class AudioRecorder extends EventEmitter implements IRecorderService {
         userTrackNo,
         userRecents,
         1,
-        packetNo
+        packetNo,
       );
       this.userPacketNos.set(user.id, newPacketNo);
     }
@@ -213,5 +269,113 @@ export class AudioRecorder extends EventEmitter implements IRecorderService {
 
   getRecordingsDirectory(): string {
     return this.multiTracksEncoder.getRecordingsDirectory();
+  }
+
+  async createStreamFile() {
+    try {
+      const tmpFilePath = resolve(
+        tmpdir().toString(),
+        `discord-voice-${Date.now()}.ogg`,
+      );
+      const audioFile = resolve(
+        tmpdir().toString(),
+        `discord-voice-${Date.now()}.mp3`,
+      );
+      const fileStream = createWriteStream(tmpFilePath);
+
+      this.opusDecoder.on("data", (chunk) => {
+        console.log("first");
+        fileStream.write(chunk);
+      });
+
+      this.opusDecoder.on("finish", () => {
+        fileStream.end();
+      });
+
+      this.logger.info("File begin");
+
+      const params = {
+        audio: audioFile,
+        speaker_labels: false,
+      };
+
+      const run = async () => {
+        const transcript = await assemblyAI.transcripts.transcribe(params);
+        this.logger.info("Transcript begin");
+        if (transcript.status === "error") {
+          console.error(`Transcription failed: ${transcript.error}`);
+        }
+
+        this.logger.info(transcript.text);
+
+        for (const utterance of transcript.utterances!) {
+          this.logger.info(`Speaker: ${utterance.text}`);
+        }
+      };
+      fileStream.on("finish", async () => {
+        Ffmpeg(tmpFilePath)
+          .audioCodec("libmp3lame")
+          .format("mp3")
+          .output(audioFile)
+          .on("error", (err) => {
+            console.error(err);
+          })
+          .on("end", async () => {
+            console.log("Processing finished !");
+            await run();
+          })
+          .run();
+      });
+    } catch (error) {
+      this.logger.error(error);
+    }
+
+    this.voiceConnection.on("userDisconnect", async (u) => {
+      this.logger.info("voice end");
+      this.logger.info(`[userDisconnect]: ${u}`);
+      this.opusDecoder.end();
+
+      // this.opusDecoder.end(); //
+      // Close the transcriber
+      // await transcriber.close();
+      //  this.logger.info("Final text:", transcription)
+      // const chatGPTResponse = await this.getChatGPTResponse(transcription);
+      //  this.logger.info("ChatGPT response:", chatGPTResponse);
+      // const audioPath = await convertTextToSpeech(chatGPTResponse);
+      // const audioResource = createAudioResource(audioPath, {
+      //     inputType: StreamType.Arbitrary,
+      // });
+      // const player = createAudioPlayer();
+      // player.play(audioResource);
+      // this.deepgramConnection.subscribe(player);
+
+      // player.on(AudioPlayerStatus.Idle, () => {
+      //    this.logger.info('Finished playing audio response.');
+      //   player.stop();
+      //     // Listen for the next user query
+      //   listenAndRespond(this.deepgramConnection, receiver, message);
+    });
+  }
+
+  async getChatGPTResponse(text: string): Promise<string> {
+    try {
+      const command = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: ` You are an amazing assistant with quick responses on any global topic`,
+          },
+          {
+            role: "user",
+            content: text,
+          },
+        ],
+      });
+      return command.choices[0].message.content;
+    } catch (error) {
+      this.logger.error("Error with ChatGPT:", error);
+      return "I am having trouble processing this right now.";
+    }
   }
 }

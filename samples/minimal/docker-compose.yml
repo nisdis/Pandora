@@ -4,7 +4,7 @@ services:
     # build:
     #   context: ../..
     container_name: pandora
-    image: pandora-local:v1.4
+    image: pandora-local:v1.5
     restart: on-failure:5
     depends_on:
       - redis
@@ -26,6 +26,10 @@ services:
       # Sidecar port
       - DAPR_HTTP_PORT=${DAPR_HTTP_PORT}
       - DOMAIN=${DOMAIN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY} # Load API keys from .env
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY}
       - NODE_ENV=production
     volumes:
       - /tmp/pandora:/app/rec

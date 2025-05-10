@@ -13,4 +13,5 @@ export const TYPES = {
   PubSubServerProxy: Symbol.for("PubSubServerProxy"),
   ClientProvider: Symbol.for("ClientProvider"),
   Client: Symbol.for("Client"),
+  ElevenLabs: Symbol.for("ElevenLabs"),
 };
