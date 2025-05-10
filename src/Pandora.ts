@@ -22,43 +22,38 @@ import { exit } from "process";
 import { IObjectStore } from "./pkg/object-store/objet-store-api";
 import { join } from "path";
 import { readdir, unlink } from "fs/promises";
-import got from 'got';
+import got from "got";
 
-import { pipeline } from 'stream'; // Import 'stream'
-import { promisify } from 'util'; // Import promisify from 'util'
-import { exec } from 'child_process'; // Import promisify from 'util'
-import { createWriteStream, PathLike } from 'fs'; // Import promisify from 'util'
-
+import { pipeline } from "stream"; // Import 'stream'
+import { promisify } from "util"; // Import promisify from 'util'
+import { exec } from "child_process"; // Import promisify from 'util'
+import { createWriteStream, PathLike } from "fs"; // Import promisify from 'util'
 
 const pipelineAsync = promisify(pipeline); // Convert pipeline to promise-based
-const execThis = promisify(exec)
+const execThis = promisify(exec);
 
 // Your additional code logic here...
 
-
 async function getStream(recordID: string) {
-
   const filePath: PathLike = `/app/bucket/somefile${recordID}.ogg`;
   const url: string = `http://pandora-cooking-server:3004/${recordID}`;
 
-  await pipelineAsync(
-    got.stream(url),
-    createWriteStream(filePath)
-  ).catch(err => {
-    unlink(filePath).catch(err => {
-      if (err.code !== 'ENOENT') {
-        // trying to delete output file upon error
-        console.log('error trying to delete output file', err);
-      }
-    });
-    throw err;
-  });
-  const { stdout, stderr } = await execThis(`chmod 777 /app/bucket/*${recordID}*`);
-  console.log(stderr, stdout)
-
-
+  await pipelineAsync(got.stream(url), createWriteStream(filePath)).catch(
+    (err) => {
+      unlink(filePath).catch((err) => {
+        if (err.code !== "ENOENT") {
+          // trying to delete output file upon error
+          console.log("error trying to delete output file", err);
+        }
+      });
+      throw err;
+    },
+  );
+  const { stdout, stderr } = await execThis(
+    `chmod 777 /app/bucket/*${recordID}*`,
+  );
+  console.log(stderr, stdout);
 }
-
 
 @injectable()
 export class Pandora {
@@ -80,15 +75,15 @@ export class Pandora {
     @inject(TYPES.Logger) private logger: ILogger,
     /** Optional deps *
     /** Object storage to store recording files */
-    @inject(TYPES.ObjectStore) @optional() private objectStore: IObjectStore
+    @inject(TYPES.ObjectStore) @optional() private objectStore: IObjectStore,
   ) {
     if (this.objectStore === undefined)
       this.logger.info(
-        "Object store undefined, recording will be kept on the container filesystem"
+        "Object store undefined, recording will be kept on the container filesystem",
       );
     else {
       this.logger.info(
-        `Object store used, record will be uploaded on the storage backend`
+        `Object store used, record will be uploaded on the storage backend`,
       );
     }
   }
@@ -98,22 +93,22 @@ export class Pandora {
 
     // Starting a new record when any of the control method asks to
     this.unifiedController.on("start", (evt) =>
-      this.onStartCommand(evt.controller, evt.data)
+      this.onStartCommand(evt.controller, evt.data),
     );
 
     // Starting a new record when any of the control method asks to
     this.unifiedController.on("end", (evt) =>
-      this.onEndCommand(evt.controller, evt.data)
+      this.onEndCommand(evt.controller, evt.data),
     );
 
     // Logging any controller infos
     this.unifiedController.on("debug", (evt) =>
-      this.onControllerDebugEvent(evt.controller, evt.message)
+      this.onControllerDebugEvent(evt.controller, evt.message),
     );
 
     // Listens to any controller error, notify the user via the controller and logs it
     this.unifiedController.on("error", (evt) =>
-      this.onControllerErrorEvent(evt.controller, evt.error)
+      this.onControllerErrorEvent(evt.controller, evt.error),
     );
 
     // Init control methods
@@ -141,7 +136,7 @@ export class Pandora {
    */
   async onStartCommand(
     c: IController,
-    data: IRecordAttemptInfo
+    data: IRecordAttemptInfo,
   ): Promise<void> {
     this.logger.info(`[Controller ${c}] :: Starting a new recording...`);
     this.logger.debug(`Record parameters : ${JSON.stringify(data)}`);
@@ -196,7 +191,7 @@ export class Pandora {
   async resumeRecording(): Promise<void> {
     const state = await this.stateStore.getState();
     const canResume = await this.unifiedController.resumeFromState(
-      state.controllerState
+      state.controllerState,
     );
     if (canResume) {
       this.isResumingRecord = true;
@@ -208,7 +203,7 @@ export class Pandora {
 
   async startRecording(
     c: IController,
-    data: IRecordAttemptInfo
+    data: IRecordAttemptInfo,
   ): Promise<void> {
     if (c === undefined) {
       throw new Error("Unexpected error, controller is not defined");
@@ -221,16 +216,16 @@ export class Pandora {
       // a start event was fired while the bot is already recording...
       if (!this.isResumingRecord) {
         this.logger.info(
-          `A recording attempt was denied : Bot is already recording`
+          `A recording attempt was denied : Bot is already recording`,
         );
         await c.sendMessage(
-          "A recording has already started. Please end the current recording before starting another"
+          "A recording has already started. Please end the current recording before starting another",
         );
         return;
       }
       // Or this is a disaster recovery scenario
       await c.sendMessage(
-        "Recovered from discord stream failure, now recording again ! "
+        "Recovered from discord stream failure, now recording again ! ",
       );
       this.logger.info("Recovered from recording failure");
     }
@@ -243,7 +238,7 @@ export class Pandora {
     } catch (e) {
       this.logger.info(`User has no voice channel. Aborting record attempt `);
       await c.sendMessage(
-        "You must be in a voice channel to start a new record"
+        "You must be in a voice channel to start a new record",
       );
       return;
     }
@@ -265,7 +260,7 @@ export class Pandora {
         currentState,
         c,
         data.voiceChannelId,
-        recordId
+        recordId,
       );
       await this.stateStore.setState(newState);
 
@@ -277,10 +272,10 @@ export class Pandora {
       switch (e.constructor.name) {
         case InvalidRecorderStateError.name:
           this.logger.error(
-            "Invalid audiorecorder state : Bot is already recording. Aborting"
+            "Invalid audiorecorder state : Bot is already recording. Aborting",
           );
           await c.sendMessage(
-            "A recording has already started. Please end the current recording before starting another"
+            "A recording has already started. Please end the current recording before starting another",
           );
           break;
         default:
@@ -312,7 +307,7 @@ export class Pandora {
     const currentState = await this.stateStore.getState();
     if (currentState === undefined) {
       this.logger.info(
-        "An attempt to end a non existent recording was made. Aborting"
+        "An attempt to end a non existent recording was made. Aborting",
       );
       await c.sendMessage("No recording ");
       return;
@@ -329,7 +324,7 @@ export class Pandora {
       switch (e.constructor.name) {
         case InvalidRecorderStateError.name:
           this.logger.info(
-            "An attempt to end a non existent recording was made. Aborting"
+            "An attempt to end a non existent recording was made. Aborting",
           );
           await c.sendMessage("No pending recording");
           break;
@@ -353,13 +348,15 @@ export class Pandora {
       try {
         await c.sendMessage(`Uploading records...`);
         this.logger.info("Uploading the records...");
-        const nbFilesUploaded = await this.saveInObjectStore(
-          currentState.recordsIds
+        // const nbFilesUploaded = await this.saveInObjectStore(
+        //   currentState.recordsIds,
+        // );
+        const { stdout, stderr } = await execThis(
+          `mv /app/rec/${c.recordID}* /app/bucket/ && chmod 777 /app/bucket/*${c.recordID}*`,
         );
-        if (nbFilesUploaded === 0)
-          this.logger.warn(`Could not find any record files to upload`);
+        console.log(stderr, stdout);
+        if (stderr) this.logger.warn(` error moving files `);
         await c.sendMessage(`Records uploaded !`);
-
       } catch (e) {
         this.logger.error(`Error while uploading records files`, e);
       }
@@ -382,7 +379,7 @@ export class Pandora {
       err: err,
     });
     await c.sendMessage(
-      "Unexpected Discord stream error encountered. Recovering...  "
+      "Unexpected Discord stream error encountered. Recovering...  ",
     );
     // Crash to reset everything.
     // We can't exactly ensure that the Discord lib has recovered from the error
@@ -419,7 +416,7 @@ export class Pandora {
     currentState: IRecordingState,
     c: IController,
     voiceChannelId: string,
-    recordId: string
+    recordId: string,
   ): Promise<IRecordingState> {
     // store state
     // There can be multiple record IDs if we're resuming a previous record

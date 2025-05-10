@@ -33,7 +33,7 @@ export class CommandBroker extends EventEmitter implements IController {
     private readonly botCommands: {
       start: string;
       end: string;
-    }
+    },
   ) {
     super();
   }
@@ -44,19 +44,22 @@ export class CommandBroker extends EventEmitter implements IController {
 
     // Get rid as soon as possible of the Eris Message
     this.boImpl.on("messageCreate", async (m) => {
-      if (await this.isMsgProcessable(m.content, m.member.id)) {
-        return this.processMessage(
-          m.id,
-          m.channel.id,
-          this.getMsgTrigger(m.content),
-          {
-            voiceChannelId: m.member?.voiceState?.channelID,
-            id: m.member.id,
-            username: m.member.username,
-          }
-        );
+      if (m?.content && m?.member?.id) {
+        if (await this.isMsgProcessable(m.content, m.member.id)) {
+          return this.processMessage(
+            m.id,
+            m.channel.id,
+            this.getMsgTrigger(m.content),
+            {
+              voiceChannelId: m.member?.voiceState?.channelID,
+              id: m.member.id,
+              username: m.member.username,
+            },
+          );
+        }
       }
     });
+
     return Promise.resolve(undefined);
   }
 
@@ -99,7 +102,7 @@ export class CommandBroker extends EventEmitter implements IController {
       id: string;
       voiceChannelId: string | undefined;
       username: string;
-    }
+    },
   ): Promise<void> {
     switch (trigger) {
       case this.botCommands.start:
@@ -107,7 +110,7 @@ export class CommandBroker extends EventEmitter implements IController {
           await this.attemptStartEvent(
             textChannelId,
             id,
-            author.voiceChannelId ?? undefined
+            author.voiceChannelId ?? undefined,
           );
           this.state = {
             name: CommandBroker.CLASS_ID,
@@ -140,7 +143,7 @@ export class CommandBroker extends EventEmitter implements IController {
       default:
         // Should be unreachable
         throw new BrokerError(
-          `while processing message : command ${trigger} not registered`
+          `while processing message : command ${trigger} not registered`,
         );
     }
   }
@@ -157,19 +160,19 @@ export class CommandBroker extends EventEmitter implements IController {
   async attemptStartEvent(
     textChannelId: string,
     messageId: string,
-    voiceChannelId: string
+    voiceChannelId: string,
   ) {
     const message = await this.boImpl.getMessage(textChannelId, messageId);
     this.messageBuffer = message;
     if (message.channel?.type !== ChannelType.GuildText) {
       throw new BrokerError(
-        `while starting record : Expected text channel but got ${ChannelType.GuildText[message.channel?.type]
-        }`
+        `while starting record : Expected text channel but got 
+        ${ChannelType.GuildText[message.channel?.type]}`,
       );
     }
     if (voiceChannelId === undefined || voiceChannelId === null) {
       throw new BrokerError(
-        `while starting record : Expected user to be in a voice channel`
+        `while starting record : Expected user to be in a voice channel`,
       );
     }
     this.emit("start", {
@@ -186,13 +189,13 @@ export class CommandBroker extends EventEmitter implements IController {
   async attemptEndEvent(endAuthor: { id: string; username: string }) {
     if (this.messageBuffer === undefined) {
       throw new BrokerError(
-        `Attempting to end a record that hasn't started with this method`
+        `Attempting to end a record that hasn't started with this method`,
       );
     }
     // Check author
     if (this.messageBuffer.member.id !== endAuthor.id) {
       throw new BrokerError(
-        `while finishing record : ${this.messageBuffer.member.username} must end the recording himself (not ${endAuthor.username})`
+        `while finishing record : ${this.messageBuffer.member.username} must end the recording himself (not ${endAuthor.username})`,
       );
     }
     this.emit("end");
@@ -207,7 +210,8 @@ export class CommandBroker extends EventEmitter implements IController {
     return 1;
   }
 
-  signalState(event: RECORD_EVENT): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  signalState(_event: RECORD_EVENT): Promise<void> {
     // This isn't used with this broker
     return Promise.resolve(undefined);
   }
@@ -246,7 +250,7 @@ export class CommandBroker extends EventEmitter implements IController {
         this.state.data.textChannelId,
         this.state.data.messageId,
         // This can be either null or undefined so we're checking strictly
-        this.state.data.voiceChannelId ?? undefined
+        this.state.data.voiceChannelId ?? undefined,
       );
     } catch (e) {
       this.emit("error", e);
