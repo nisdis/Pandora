@@ -53,8 +53,9 @@ container
 
 const DAPR_SERVER_PORT = process.env.DAPR_SERVER_PORT ?? "50053";
 const DAPR_HTTP_PORT = process.env.DAPR_HTTP_PORT ?? "3503";
+const DAPR_HOST = process.env.DAPR_HOST ?? "localhost";
 console.debug(
-  `Dapr params : http port -> "${DAPR_HTTP_PORT}", server port -> "${DAPR_SERVER_PORT}"`
+  `Dapr params : http port -> "${DAPR_HTTP_PORT}", server port -> "${DAPR_SERVER_PORT}"`,
 );
 container
   .bind<IRecorderService>(TYPES.AudioRecorder)
@@ -64,14 +65,14 @@ container
 /** State store */
 container
   .bind(TYPES.StoreProxy)
-  .toConstantValue(new DaprClient("localhost", DAPR_HTTP_PORT).state);
+  .toConstantValue(new DaprClient(DAPR_HOST, DAPR_HTTP_PORT).state);
 container
   .bind(TYPES.StateStore)
   .toConstantValue(
     new ExternalStore(
       container.get<IStoreProxy>(TYPES.StoreProxy),
-      process.env.STORE_NAME ?? "Store"
-    )
+      process.env.STORE_NAME ?? "Store",
+    ),
   );
 
 /** Object Store */
@@ -83,8 +84,8 @@ if (objComponent) {
     .toConstantValue(
       new DaprObjectStorageAdapter(
         new DaprClient("localhost", DAPR_HTTP_PORT).binding,
-        process.env.OBJECT_STORE_NAME
-      )
+        process.env.OBJECT_STORE_NAME,
+      ),
     );
   container.bind<IObjectStore>(TYPES.ObjectStore).to(ExternalObjectStore);
 }
@@ -106,13 +107,14 @@ if (PSComponent) {
       new PubSubBroker(
         container.get<IPubSubClientProxy>(TYPES.PubSubClientProxy),
         container.get<IPubSubServerProxy>(TYPES.PubSubServerProxy),
-        process.env.PUBSUB_NAME
-      )
+        process.env.PUBSUB_NAME,
+      ),
     );
 }
 
 /** Eris client */
-container.bind(TYPES.ClientProvider).toProvider((context) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+container.bind(TYPES.ClientProvider).toProvider((_context) => {
   return () => {
     return new Promise((res, rej) => {
       const client = new Eris.Client(process.env.PANDORA_TOKEN);
@@ -124,8 +126,8 @@ container.bind(TYPES.ClientProvider).toProvider((context) => {
       client.on("error", (err) => {
         console.log(
           `Catching connexion reset by peers. Eris should reconnect. Details : ${JSON.stringify(
-            err
-          )}`
+            err,
+          )}`,
         );
       });
       client.connect();
@@ -148,7 +150,7 @@ if (commandPrefix) {
       {
         start: "record",
         end: "end",
-      }
+      },
     );
   });
 }
@@ -170,7 +172,7 @@ if (process.env?.DISABLE_INTERACTION === undefined) {
           description: "End a previously started recording",
           type: Constants.ApplicationCommandTypes.CHAT_INPUT,
         },
-      ]
+      ],
     );
   });
 }
@@ -194,6 +196,6 @@ container
       container.get<IRecorderService>(TYPES.AudioRecorder),
       container.get<IRecordingStore>(TYPES.StateStore),
       container.get<ILogger>(TYPES.Logger),
-      objStore
-    )
+      objStore,
+    ),
   );

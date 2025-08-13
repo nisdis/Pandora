@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export class BrokerError extends Error { }
 
 export enum RECORD_EVENT {
@@ -85,16 +86,15 @@ export declare interface IController {
    */
   signalState(
     event: RECORD_EVENT.STARTED,
-    payload?: Record<string, any>
+    payload?: Record<string, any>,
   ): Promise<void>;
   signalState(
     event: RECORD_EVENT.STOPPED,
-    payload?: { ids: string[] }
+    payload?: { ids: string[] },
   ): Promise<void>;
 
   /** ID of the recording */
   recordID: string;
-
 }
 
 /**
@@ -111,7 +111,7 @@ export declare interface IUnifiedBotController {
     listener: (arg: {
       data: IRecordAttemptInfo;
       controller: IController;
-    }) => void
+    }) => void,
   ): this;
 
   /**
@@ -121,7 +121,7 @@ export declare interface IUnifiedBotController {
    */
   on(
     event: "end",
-    listener: (arg: { data: any; controller: IController }) => void
+    listener: (arg: { data: any; controller: IController }) => void,
   ): this;
 
   /**
@@ -131,7 +131,7 @@ export declare interface IUnifiedBotController {
    */
   on(
     event: "error",
-    listener: (arg: { error: Error; controller: IController }) => void
+    listener: (arg: { error: Error; controller: IController }) => void,
   ): this;
 
   /**
@@ -141,7 +141,7 @@ export declare interface IUnifiedBotController {
    */
   on(
     event: "debug",
-    listener: (arg: { message: string; controller: IController }) => void
+    listener: (arg: { message: string; controller: IController }) => void,
   ): this;
 
   /**
