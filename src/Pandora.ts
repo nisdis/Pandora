@@ -12,10 +12,7 @@ import {
   IRecordingState,
   IRecordingStore,
 } from "./pkg/state-store/state-store.api";
-import {
-  AccurateTime,
-  IRecorderService,
-} from "./pkg/audio-recorder/audio-recorder-api";
+import { IRecorderService } from "./pkg/audio-recorder/audio-recorder-api";
 import { InvalidRecorderStateError } from "./pkg/audio-recorder/audio-recorder";
 import { ILogger } from "./pkg/logger/logger-api";
 import { exit } from "process";
@@ -31,7 +28,7 @@ import { createWriteStream, PathLike } from "fs"; // Import promisify from 'util
 
 const pipelineAsync = promisify(pipeline); // Convert pipeline to promise-based
 const execThis = promisify(exec);
-
+const maxChars = 90;
 // Your additional code logic here...
 
 async function getStream(recordID: string) {
@@ -53,6 +50,84 @@ async function getStream(recordID: string) {
     `chmod 777 /app/bucket/*${recordID}*`,
   );
   console.log(stderr, stdout);
+  return getTranscript(recordID);
+}
+
+async function getTranscript(recordID: string) {
+  try {
+    const userResult = await got(
+      "http://meetpod:3000/api/recording/stt/" + recordID,
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    ).json();
+    // console.log(userResult);
+    if (userResult) {
+      return getAISummary(recordID);
+    }
+  } catch (error) {
+    console.log(error);
+  }
+}
+function lineBreak(mdData: string) {
+  // Split the content into lines
+  const lines = mdData.split("\n");
+  const adjustedLines = lines.map((line: string) => {
+    const words = line.split(" "); // Split the line into words
+    const resultLine = [];
+    let currentLine = "";
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    words.forEach((word: string) => {
+      // Check if adding the word exceeds the maxChars limit
+      if (currentLine.length + word.length + 1 <= maxChars) {
+        // If it's not the first word, add a space
+        if (currentLine) {
+          currentLine += " ";
+        }
+        currentLine += word; // Add the word to the current line
+      } else {
+        // Current line reached the maxChars limit, push it to resultLine
+        resultLine.push(currentLine);
+        currentLine = word; // Start a new line with the current word
+      }
+    });
+
+    // Push any remaining text in currentLine to resultLine
+    if (currentLine) {
+      resultLine.push(currentLine);
+    }
+
+    return resultLine.join("\n"); // Join the lines with newline characters
+  });
+
+  // Join adjusted lines back into a single string
+  const result = adjustedLines.join("\n");
+
+  return result;
+}
+async function getAISummary(recordID: string | number) {
+  try {
+    const userResult = await got(
+      `http://meetpod:3000/api/recording/ai/${recordID}/summary`,
+    ).text();
+    // console.log(userResult);
+    if (userResult && recordID) {
+      // summary = userResult.replace(/(?:\r\n|\r|\n)/g, '\n\n').replace('  ', '');
+      const summary = userResult.replace(/(```|md)/g, "").replace("  ", "");
+      return lineBreak(summary);
+    }
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+function stringToArrayBuffer(str: string) {
+  const encoder = new TextEncoder(); // Create a TextEncoder instance
+  const uint8Array = encoder.encode(str); // Encode the string
+  return Buffer.from(uint8Array.buffer); // Return the underlying ArrayBuffer
 }
 
 @injectable()
@@ -60,6 +135,7 @@ export class Pandora {
   /** Is the bot allowed to resume a record ? */
   private isResumingRecord = false;
   private client: Client;
+  private channelId: string;
 
   constructor(
     /** Discord client */
@@ -118,6 +194,11 @@ export class Pandora {
       this.logger.info("Up & Ready");
     });
 
+    this.client.on("messageCreate", (event) => {
+      this.logger.info("Message: " + event.channel.id);
+      this.channelId = event.channel.id;
+    });
+
     await this.client.connect();
 
     // Error restart handling
@@ -139,7 +220,7 @@ export class Pandora {
     data: IRecordAttemptInfo,
   ): Promise<void> {
     this.logger.info(`[Controller ${c}] :: Starting a new recording...`);
-    this.logger.debug(`Record parameters : ${JSON.stringify(data)}`);
+    this.logger.info(`Record parameters : ${JSON.stringify(data)}`);
     await this.startRecording(c, data);
   }
 
@@ -148,6 +229,7 @@ export class Pandora {
    * @param c Controller firing the command
    * @param data Recording context info
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async onEndCommand(c: IController, data: any): Promise<void> {
     this.logger.info(`[Controller ${c}] :: Ending recording`);
     await this.endRecording(c, data);
@@ -232,7 +314,7 @@ export class Pandora {
     // Past this point, reset the bot to a non recovery state
     this.isResumingRecord = false;
 
-    let channel;
+    let channel: VoiceChannel;
     try {
       channel = this.getVoiceChannelFromId(data.voiceChannelId);
     } catch (e) {
@@ -289,7 +371,7 @@ export class Pandora {
     try {
       // Record has started
       this.client.editStatus("online", {
-        name: `${(channel as VoiceChannel).name}`,
+        name: `${channel.name}`,
         type: 2,
       });
     } catch (e) {
@@ -297,6 +379,7 @@ export class Pandora {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
   async endRecording(c: IController, data: any): Promise<void> {
     // retrieve state
     //    -> Check if not recording, if yes abort
@@ -340,8 +423,6 @@ export class Pandora {
     } catch (e) {
       // We don't care if this fails
     }
-    // Record ended successfully, reset the state so we can record again
-    await this.stateStore.deleteState();
 
     // Last Step : If an object storage was provided, upload the records files onto it
     if (this.objectStore !== undefined) {
@@ -368,10 +449,24 @@ export class Pandora {
     await c.signalState(RECORD_EVENT.STOPPED, {
       ids: currentState.recordsIds,
     });
-    await getStream(c.recordID);
+    const summary = await getStream(c.recordID);
     await c.sendMessage(
       `Recording session ended successfully! ${process?.env?.DOMAIN ?? "http://localhost:5173/master/meet/"}${c.recordID} `,
     );
+    setTimeout(async () => {
+      const channelID = this.channelId;
+      if (channelID && summary) {
+        const fileData = stringToArrayBuffer(summary);
+        const fileName = "summary.md";
+        await this.client.createMessage(channelID, "This is the summary", {
+          file: fileData,
+          name: fileName,
+        });
+      }
+    }, 5);
+
+    // Record ended successfully, reset the state so we can record again
+    await this.stateStore.deleteState();
   }
 
   async handleRecorderError(c: IController, err: Error): Promise<never> {
