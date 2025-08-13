@@ -4,13 +4,11 @@ services:
     # build:
     #   context: ../..
     container_name: pandora
-    image: pandora-local:v1.4
+    image: pandora-local:v1.5
     restart: on-failure:5
     depends_on:
       - redis
       - placement
-    ports:
-      - "${DAPR_HTTP_PORT}:${DAPR_HTTP_PORT}"
     environment:
       # Discord bot token
       - PANDORA_TOKEN=${PANDORA_TOKEN}
@@ -25,6 +23,7 @@ services:
       - DAPR_SERVER_PORT=${DAPR_SERVER_PORT}
       # Sidecar port
       - DAPR_HTTP_PORT=${DAPR_HTTP_PORT}
+      - DAPR_HOST=${DAPR_HOST}
       - DOMAIN=${DOMAIN}
       - NODE_ENV=production
     volumes:
@@ -35,13 +34,30 @@ services:
   # Dapr sidecar, defining runtime implementations
   pandora-dapr:
     image: "daprio/daprd:edge"
+    container_name: pandora-dapr
     command: [ "./daprd", "-app-id", "pandora", "-app-port", "${DAPR_SERVER_PORT}", "-dapr-http-port", "${DAPR_HTTP_PORT}", "--max-body-size", "1200Ki", "-placement-host-address", "placement:50006", "-resources-path", "./components", "--dapr-graceful-shutdown-seconds", "20" ]
     # In docker-compose, you have to provide components by sharing a volume
     restart: always
     # this is the dapr/components directory
+    ports:
+      - "${DAPR_HTTP_PORT}:${DAPR_HTTP_PORT}"
     volumes:
       - "./components/:/components"
-    network_mode: "service:pandora"
+    networks:
+      - discord_recordings
+  meetpod:
+    image: meetpod-local:v1.1
+    container_name: meetpod
+    restart: on-failure:5
+    depends_on:
+      - pandora
+    volumes:
+      - /mnt/bucket:/mnt/bucket
+    ports:
+      - "3000:3000" 
+    # this is the dapr/components directory
+    networks:
+      - discord_recordings
 
   placement:
     image: "daprio/dapr"

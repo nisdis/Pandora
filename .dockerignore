@@ -7,3 +7,4 @@ rec
 .yarnrc.yml
 package-lock.json
 docs
+.dapr
